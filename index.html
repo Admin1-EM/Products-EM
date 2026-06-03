@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Склад Справки - Чат</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; }
+        body { background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        
+        /* Прозорец за парола */
+        #auth-container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 400px; z-index: 100; }
+        #auth-container h2 { margin-bottom: 20px; color: #333; }
+        #auth-container input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; text-align: center; }
+        #auth-container button { width: 100%; padding: 12px; background: #0084ff; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: bold; }
+        #auth-container button:hover { background: #006bce; }
+        #error-msg { color: red; font-size: 14px; margin-top: 10px; display: none; }
+
+        /* Основен чат интерфейс */
+        #chat-container { width: 100%; max-width: 600px; height: 100vh; background: white; display: none; flex-direction: column; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
+        
+        /* Горна лента */
+        .chat-header { background: #0084ff; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+        .lang-selectors button { background: rgba(255,255,255,0.2); color: white; border: none; padding: 5px 10px; margin-left: 5px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .lang-selectors button.active { background: white; color: #0084ff; font-weight: bold; }
+
+        /* История на съобщенията */
+        .chat-messages { flex: 1; padding: 15px; overflow-y: auto; background: #f9f9f9; display: flex; flex-direction: column; gap: 12px; }
+        .msg { max-width: 85%; padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.4; }
+        .msg.user { background: #0084ff; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .msg.bot { background: #e4e6eb; color: #050505; align-self: flex-start; border-bottom-left-radius: 2px; }
+        
+        /* Карта на продукт */
+        .product-card { background: white; border-radius: 10px; border: 1px solid #e4e6eb; overflow: hidden; margin-top: 5px; }
+        .product-img { width: 100%; max-height: 200px; object-fit: contain; background: #fff; padding: 10px; border-bottom: 1px solid #e4e6eb; }
+        .product-details { padding: 12px; }
+        .product-title { font-weight: bold; font-size: 16px; color: #333; margin-bottom: 5px; }
+        .product-price { font-size: 18px; color: #28a745; font-weight: bold; margin: 5px 0; }
+        .product-stock { font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+        .stock-available { color: #28a745; } .stock-unavailable { color: #dc3545; }
+        .product-desc { font-size: 13px; color: #666; margin-top: 5px; list-style-position: inside; }
+
+        /* Поле за писане */
+        .chat-input-area { padding: 12px; background: white; border-top: 1px solid #e4e6eb; display: flex; gap: 10px; }
+        .chat-input-area input { flex: 1; padding: 12px; border: 1px solid #ccd0d5; border-radius: 20px; outline: none; font-size: 15px; }
+        .chat-input-area button { background: #0084ff; color: white; border: none; padding: 0 20px; border-radius: 20px; font-weight: bold; cursor: pointer; }
+        .chat-input-area button:hover { background: #006bce; }
+    </style>
+</head>
+<body>
+
+    <div id="auth-container">
+        <h2>Вход в системата</h2>
+        <input type="password" id="pass-input" placeholder="Въведете парола за достъп...">
+        <button onclick="checkPassword()">Отключи</button>
+        <div id="error-msg">Грешна парола! Моля, опитайте отново.</div>
+    </div>
+
+    <div id="chat-container">
+        <div class="chat-header">
+            <span>Склад Справки</span>
+            <div class="lang-selectors">
+                <button id="btn-bg" class="active" onclick="setLanguage('bg')">BG</button>
+                <button id="btn-en" onclick="setLanguage('en-us')">EN</button>
+                <button id="btn-ro" onclick="setLanguage('ro')">RO</button>
+            </div>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            </div>
+        <div class="chat-input-area">
+            <input type="text" id="user-input" placeholder="Въведете артикулен номер..." onkeypress="if(event.key === 'Enter') sendMessage()">
+            <button onclick="sendMessage()">Изпрати</button>
+        </div>
+    </div>
+
+    <script>
+        // ТАЙНАТА ПАРОЛА И ДАННИТЕ
+        const SECRET_PASS = "vR8rdupxhnCYe4CLVoEHVQDmC";
+        let currentLang = 'bg';
+
+        // ТУК Е ВАШИЯТ JSON ФАЙЛ С ПРОДУКТИ
+        const db = {
+            "items": [
+                {
+                    "code": "030260",
+                    "name": {
+                        "bg": "R20 Бормашина безч. 2-ск. 10mm 50Nm 2x2Ah Case RDP-PBD20",
+                        "en-us": "R20 Brushless Drill 2speed 10mm 50Nm 2x2Ah Case RDP-PBD20",
+                        "ro": "R20 Masina de gaurit si insurubat 20V 2x2.0Ah 50Nm RDP-PDI20"
+                    },
+                    "short_description": {
+                        "bg": "Безчеткова акумулаторна бормашина R20 с висока ефективност...",
+                        "en-us": "R20 brushless cordless drill with high efficiency...",
+                        "ro": ""
+                    },
+                    "price": { "currency": "EUR", "value": "79.95" },
+                    "images": ["https://b2b.euromasterbg.com/storage/products/030260/images/001_030260__1024x1024.jpg"],
+                    "availability": [{ "warehouse": "ЦЕНТРАЛЕН", "status": "available" }]
+                },
+                {
+                    "code": "030268",
+                    "name": {
+                        "bg": "R20 Вибратор за плочки Ø130mm Solo RDP-TV20",
+                        "en-us": "R20 Tile Vibrator Leveling Machine Ø130mm Solo RDP-TV20",
+                        "ro": "R20 Ventuza electrica 20V 130mm SOLO cu vibratii RDP-TV20"
+                    },
+                    "short_description": {
+                        "bg": "Ефективно премахване на въздушни кухини...",
+                        "en-us": "Efficient removal of air pockets...",
+                        "ro": ""
+                    },
+                    "price": { "currency": "EUR", "value": "42.95" },
+                    "images": ["https://b2b.euromasterbg.com/storage/products/030268/images/001_030268__1024x1024.jpg"],
+                    "availability": [{ "warehouse": "ЦЕНТРАЛЕН", "status": "available" }]
+                },
+                {
+                    "code": "075366",
+                    "name": {
+                        "bg": "Косачка робот безчеткова 160mm 20V 2Ah APP 500m2 RD-RLM46",
+                        "en-us": "Brushless Robot Lawn Mower 160mm 20V 2Ah APP 500m2 RD-RLM46",
+                        "ro": "Robot de tuns gazon BL 160mm 20V 2Ah APP 500m2 RD-RLM46"
+                    },
+                    "short_description": {
+                        "bg": "Роботизираната косачка RD-RLM46 е създадена да осигури...",
+                        "en-us": "The robotic lawn mower RD-RLM46 is designed...",
+                        "ro": ""
+                    },
+                    "price": { "currency": "EUR", "value": "120.00" },
+                    "images": ["https://b2b.euromasterbg.com/storage/products/030268/images/001_030268__1024x1024.jpg"], // примерен линк
+                    "availability": [{ "warehouse": "ЦЕНТРАЛЕН", "status": "available" }]
+                }
+            ]
+        };
+
+        const localizations = {
+            bg: { welcome: "Здравейте! Въведете артикулен номер, за да проверя наличност и цена.", notfound: "Артикул с такъв код не беше намерен.", price: "Цена:", stock: "Наличност:", stock_ok: "В наличност", stock_no: "Няма в наличност" },
+            'en-us': { welcome: "Hello! Enter an item code to check availability and price.", notfound: "Item with this code was not found.", price: "Price:", stock: "Stock:", stock_ok: "In stock", stock_no: "Out of stock" },
+            ro: { welcome: "Bună! Introduceți un cod de articol pentru a verifica disponibilitatea și prețul.", notfound: "Articolul cu acest cod nu a fost găsit.", price: "Preț:", stock: "Stoc:", stock_ok: "În stoc", stock_no: "Nu este în stoc" }
+        };
+
+        // Проверка на парола
+        function checkPassword() {
+            const input = document.getElementById('pass-input').value;
+            if (input === SECRET_PASS) {
+                document.getElementById('auth-container').style.display = 'none';
+                document.getElementById('chat-container').style.display = 'flex';
+                showBotMessage(localizations[currentLang].welcome);
+            } else {
+                document.getElementById('error-msg').style.display = 'block';
+            }
+        }
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            document.querySelectorAll('.lang-selectors button').forEach(b => b.classList.remove('active'));
+            document.getElementById(`btn-${lang === 'en-us' ? 'en' : lang}`).classList.add('active');
+            showBotMessage(localizations[currentLang].welcome);
+        }
+
+        function showBotMessage(text) {
+            const container = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'msg bot';
+            msgDiv.innerText = text;
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function sendMessage() {
+            const inputField = document.getElementById('user-input');
+            const code = inputField.value.trim();
+            if (!code) return;
+
+            // Показване съобщение на потребителя
+            const container = document.getElementById('chat-messages');
+            const userDiv = document.createElement('div');
+            userDiv.className = 'msg user';
+            userDiv.innerText = code;
+            container.appendChild(userDiv);
+            inputField.value = '';
+
+            // Търсене в базата данни
+            const item = db.items.find(i => i.code === code);
+            
+            setTimeout(() => {
+                if (item) {
+                    const cardDiv = document.createElement('div');
+                    cardDiv.className = 'msg bot';
+                    cardDiv.style.padding = '5px';
+                    cardDiv.style.background = 'transparent';
+                    
+                    const name = item.name[currentLang] || item.name['bg'];
+                    const desc = item.short_description[currentLang] || item.short_description['bg'] || '';
+                    const isAvailable = item.availability[0]?.status === 'available';
+                    const stockText = isAvailable ? localizations[currentLang].stock_ok : localizations[currentLang].stock_no;
+                    const stockClass = isAvailable ? 'stock-available' : 'stock-unavailable';
+
+                    cardDiv.innerHTML = `
+                        <div class="product-card">
+                            ${item.images[0] ? `<img class="product-img" src="${item.images[0]}" alt="product">` : ''}
+                            <div class="product-details">
+                                <div class="product-title">${name}</div>
+                                <div class="product-price">${item.price.value} ${item.price.currency}</div>
+                                <div class="product-stock ${stockClass}">${localizations[currentLang].stock}: ${stockText}</div>
+                                <div class="product-desc">${desc.replace(/\n/g, '<br>')}</div>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(cardDiv);
+                } else {
+                    showBotMessage(localizations[currentLang].notfound);
+                }
+                container.scrollTop = container.scrollHeight;
+            }, 500);
+        }
+    </script>
+</body>
+</html>
